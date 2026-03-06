@@ -69,7 +69,6 @@ Tras ejecutar el análisis, podrá consultar el objeto `tab_actividad` para iden
 ## Autores(as) y contacto
 
 * **Juan C Rey** - *Investigador* - [jrey@humboldt.org.co]
-* **PurpleBooth** - *Manual de documentación base* - [PurpleBooth](https://github.com/PurpleBooth)
 
 ## Licencia
 
