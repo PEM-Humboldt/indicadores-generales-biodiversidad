@@ -90,6 +90,50 @@ plot_rarefaccion_foto <- ggiNEXT(res_inext_foto, type = 1) +
 print(plot_rarefaccion_foto)
 
 # ==========================================================
+# 2.1 CÁLCULO DE IAR Y TASAS (Preparado para comparaciones)
+# ==========================================================
+
+# Definimos el filtro de especies binominales (Género + epíteto)
+data_especies <- data_full %>%
+  filter(grepl("^[A-Za-z]+ [a-z]+", scientificName))
+
+# Calculamos la tabla base
+tab_rai_final <- data_especies %>%
+  group_by(scientificName) %>%
+  summarise(n_eventos = n()) %>%
+  mutate(
+    Esfuerzo_Total = total_esfuerzo,
+    # Tasa de Encuentro: Úsala para comparar especies entre sí en este muestreo
+    Tasa_Encuentro = (n_eventos / total_esfuerzo) * 100,
+    # IAR: Guárdalo para comparar esta misma especie con el futuro muestreo
+    IAR = Tasa_Encuentro 
+  ) %>%
+  arrange(desc(n_eventos))
+
+# Seleccionamos el Top 10 para la gráfica
+top_10_datos <- tab_rai_final %>% slice_max(n_eventos, n = 10)
+
+#### grafica
+
+plot_top10_rai <- ggplot(top_10_datos, aes(x = reorder(scientificName, Tasa_Encuentro), y = Tasa_Encuentro)) +
+  geom_segment(aes(x = reorder(scientificName, Tasa_Encuentro), xend = reorder(scientificName, Tasa_Encuentro), 
+                   y = 0, yend = Tasa_Encuentro), color = "grey") +
+  geom_point(color = "royalblue", size = 4) +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Top 10 Especies con Mayor Tasa de Encuentro",
+    subtitle = paste("Esfuerzo total:", round(total_esfuerzo, 1), "días-trampa"),
+    x = NULL,
+    y = "Eventos por cada 100 días-trampa",
+    caption = "Filtro: Solo nombres binominales (Género especie).\nBasado en recomendaciones de Mandujano (2024)."
+  ) +
+  theme(panel.grid.minor = element_blank())
+
+print(plot_top10_rai)
+
+
+# ==========================================================
 # 3. PATRONES DE ACTIVIDAD
 # ==========================================================
 
