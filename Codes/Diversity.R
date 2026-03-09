@@ -9,6 +9,7 @@ library(overlap)
 library(lubridate)
 library(ggridges)
 library(reshape2)
+library(patchwork)
 
 path_data <- "~/Desktop/FPVA/Data/Fototrampeo/I2D_FPVA_Fototrampeo_20260219.xlsx"
 path_out  <- "~/Desktop/FPVA/Resultados/Fototrampeo/"
@@ -113,7 +114,7 @@ tab_rai_final <- data_especies %>%
 # Seleccionamos el Top 10 para la gráfica
 top_10_datos <- tab_rai_final %>% slice_max(n_eventos, n = 10)
 
-#### grafica
+# Graficamos y visualizamos 
 
 plot_top10_rai <- ggplot(top_10_datos, aes(x = reorder(scientificName, Tasa_Encuentro), y = Tasa_Encuentro)) +
   geom_segment(aes(x = reorder(scientificName, Tasa_Encuentro), xend = reorder(scientificName, Tasa_Encuentro), 
@@ -193,6 +194,145 @@ plot_overlap_map <- ggplot(df_ov_plot, aes(Var1, Var2, fill = value)) +
   geom_tile() + scale_fill_gradientn(colors = c("#fff5f0", "#fb6a4a", "#67000d"), limits = c(0, 1)) +
   theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(title = "Matriz de Solapamiento Temporal", x = NULL, y = NULL)
+
+
+# ==========================================================
+# 4.1. Indicador de patron de actividad y coeficiente de solapamiento
+# ==========================================================
+
+# 4. Cálculo de Matriz de Solapamiento (Siguiendo a Negret et al. 2023)
+n_top <- length(top_10_spp)
+matriz_delta <- matrix(1, n_top, n_top, dimnames = list(top_10_spp, top_10_spp))
+
+for(i in 1:(n_top-1)) {
+  for(j in (i+1):n_top) {
+    rad_i <- data_actividad_top$radianes[data_actividad_top$scientificName == top_10_spp[i]]
+    rad_j <- data_actividad_top$radianes[data_actividad_top$scientificName == top_10_spp[j]]
+    
+    # Validamos que ambas especies tengan suficientes datos (mínimo 5 según literatura)
+    if(length(rad_i) >= 5 & length(rad_j) >= 5) {
+      
+      # CORRECCIÓN: Los argumentos deben ir en Mayúsculas ("Dhat1", "Dhat4")
+      estimador <- if(min(length(rad_i), length(rad_j)) > 50) "Dhat4" else "Dhat1"
+      
+      val <- overlapEst(rad_i, rad_j, type = estimador)
+      matriz_delta[i,j] <- matriz_delta[j,i] <- val
+      
+    } else {
+      # Si no hay datos suficientes, asignamos NA
+      matriz_delta[i,j] <- matriz_delta[j,i] <- NA
+    }
+  }
+}
+# Graficamos
+# Función Radial Actualizada
+plot_radial_activity <- function(data, spp_name) {
+  df_spp <- data %>% filter(scientificName == spp_name)
+  n_obs <- nrow(df_spp)
+  
+  ggplot(df_spp, aes(x = hora_decimal)) +
+    # Capa de histograma de fondo (24 horas)
+    geom_histogram(aes(y = ..density..), bins = 24, fill = "grey92", color = "white") +
+    # Densidad de Kernel
+    geom_density(fill = "royalblue", alpha = 0.3, color = "royalblue", linewidth = 0.8) + 
+    scale_x_continuous(breaks = seq(0, 21, by = 3), limits = c(0, 24),
+                       labels = c("00","03","06","09","12","15","18","21")) +
+    coord_polar(start = 0) +
+    theme_minimal() +
+    labs(title = spp_name, 
+         subtitle = paste("n =", n_obs), # Incluimos el n como sugiere Negret
+         x = NULL, y = NULL) +
+    theme(axis.text.y = element_blank(),
+          panel.grid.minor = element_blank(),
+          plot.title = element_text(size = 10, face = "bold", hjust = 0.5),
+          plot.subtitle = element_text(size = 8, hjust = 0.5))
+}
+
+# Volver a generar la lista con la función corregida
+lista_radiales <- lapply(top_10_spp, function(s) plot_radial_activity(data_actividad_top, s))
+
+
+# 1. Unir los 10 radiales en una sola gráfica (panel de 2 filas x 5 columnas)
+grafica_actividad_integrada <- wrap_plots(lista_radiales, ncol = 5) + 
+  plot_layout(guides = 'collect') + # Agrupa leyendas si las hubiera
+  plot_annotation(
+    title = "Patrones de Actividad Temporal: Top 10 Especies",
+    subtitle = "Gráficos radiales de densidad (Ciclo de 24 horas)",
+    caption = "Basado en la metodología de Negret et al. (2023) | Datos: Fototrampeo",
+    theme = theme(
+      plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = 14, hjust = 0.5)
+    )
+  )
+
+# 2. Mostrar la gráfica en RStudio
+print(grafica_actividad_integrada)
+
+# 3. Guardar la gráfica en alta resolución para informe
+ggsave(paste0(path_out, "05_Panel_Actividad_Radial_Top10.png"), 
+       grafica_actividad_integrada, 
+       width = 16, height = 8, dpi = 300)
+
+# visualización 
+# Heatmap mejorado con paleta "Magma" 
+library(reshape2)
+df_overlap <- melt(matriz_delta, na.rm = TRUE)
+
+plot_overlap <- ggplot(df_overlap, aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(option = "magma", limit = c(0,1), name = "Coef. Delta (Δ)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+        axis.text.y = element_text(size = 9)) +
+  labs(title = "Matriz de Solapamiento Temporal (Negret et al. 2023)",
+       subtitle = "Estimadores Dhat1/Dhat4 según tamaño de muestra",
+       x = NULL, y = NULL)
+
+print(plot_overlap)
+
+# ==========================================================
+# 4.2 ÍNDICES DE DIURNALIDAD Y NOCTURNALIDAD
+# ==========================================================
+
+tab_periodos <- data_actividad_top %>%
+  mutate(Periodo = case_when(
+    hora_decimal >= 5 & hora_decimal < 7   ~ "Crepuscular",
+    hora_decimal >= 7 & hora_decimal < 17  ~ "Diurno",
+    hora_decimal >= 17 & hora_decimal < 19 ~ "Crepuscular",
+    TRUE                                   ~ "Nocturno"
+  )) %>%
+  group_by(scientificName, Periodo) %>%
+  summarise(n = n(), .groups = "drop_last") %>%
+  mutate(Proporcion = (n / sum(n)) * 100)
+
+# Ver tabla de resultados
+print(tab_periodos)
+
+# grafica
+plot_nicho_temporal <- ggplot(tab_periodos, aes(x = reorder(scientificName, Proporcion), y = Proporcion, fill = Periodo)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = c("Crepuscular" = "#f39c12", "Diurno" = "#f1c40f", "Nocturno" = "#2c3e50")) +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Estratificación del Nicho Temporal (Top 10)",
+    subtitle = "Proporción de registros por periodo del día",
+    x = "", y = "Porcentaje de registros (%)",
+    fill = "Periodo"
+  )
+
+print(plot_nicho_temporal)
+
+
+# 
+indice_nocturnalidad <- tab_periodos %>%
+  filter(Periodo == "Nocturno") %>%
+  select(scientificName, IN = Proporcion) %>%
+  arrange(desc(IN))
+
+# Este índice va de 0 (estrictamente diurno) a 100 (estrictamente nocturno)
+print(indice_nocturnalidad)
+
 
 # ==========================================================
 # 5. EXPORTACIÓN FINAL
