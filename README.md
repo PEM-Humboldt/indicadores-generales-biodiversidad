@@ -2,9 +2,48 @@
 
 Este repositorio contiene las herramientas computacionales para caracterizar y comparar la diversidad usando diferentes índices como la serie de Hill, curvas de esfuerzo de muestreo y patrones de actividad de las especies. El código permite transformar datos brutos de campo en indicadores de representatividad de muestreo y caracterización de nichos de actividad.
 
-**Estado del Proyecto:** Estable / Finalizado. Optimizado para procesar grandes volúmenes de datos y generar salidas gráficas de alta resolución para reportes técnicos.
+El siguiente flujo de trabajo integra los siguientes indicadores:
+- Diversidad de especies (Números de Hill: q0 riqueza de especies, q1 exponencial de Shannon ponderado por abundancia, q2 recíproco de Simpson que enfatiza especies dominantes): riqueza observada y estimada en sus tres órdenes de diversidad.
+- Representatividad acumulada del muestreo: fracción de la diversidad esperada que fue efectivamente detectada.
+- Frecuencia de detección y abundancia relativa de aves: RAI calculado a partir de registros de aves en puntos de conteo o cámaras trampa.
+- Abundancia relativa de mamíferos: RAI calculado a partir de eventos de detección independientes de mamíferos en cámaras trampa.
+- Solapamiento de mamíferos (conjunto completo): coeficiente Δ entre pares de especies de mamíferos detectadas por cámaras trampa.
+- Solapamiento de especies focales: coeficiente Δ entre pares de especies de interés de conservación definidas por el proyecto (pueden incluir aves, mamíferos u otros taxones).
 
 ---
+
+## Fundamento metodológico
+
+Esta sección explica el *qué* y el *por qué* de los cálculos. El detalle de calidad e incertidumbre de cada indicador vive en las fichas del catálogo de indicadores; aquí solo va lo necesario para entender y reproducir el código.
+
+### Diversidad de especies (Números de Hill) y representatividad del muestreo
+
+- **Qué calcula:** los tres órdenes de diversidad de Hill — q=0 (riqueza de especies), q=1 (exponencial de Shannon, ponderado por abundancia) y q=2 (recíproco de Simpson, énfasis en especies dominantes) — junto con la representatividad acumulada del muestreo (razón entre riqueza observada y estimada) y la curva de acumulación de especies por monitor.
+- **Enfoque:** enfoque unificado de números de Hill de Chao et al. (2014), que permite comparar diversidad entre sitios y períodos corrigiendo el efecto del esfuerzo de muestreo.
+- **Implementación:** paquete `iNEXT` de R (Hsieh et al., 2016), con interpolación/extrapolación (100 knots) e intervalos de confianza por bootstrap (999 réplicas).
+- **Cómo se calcula, paso a paso:**
+  1. Curaduría: validación de nombres de especies y registros de detección.
+  2. Cálculo del esfuerzo: días-trampa activos por estación (tabla Deployment).
+  3. Construcción de la matriz de abundancias por especie.
+  4. Ejecución de `iNEXT`: curvas de rarefacción/extrapolación y números de Hill.
+  5. Extracción de resultados: (a) valores q0, q1, q2; (b) razón de completitud (riqueza observada/estimada); (c) curva acumulada por monitor.
+
+### Solapamiento de patrones de actividad (mamíferos y especies focales)
+
+- **Qué calcula:** el coeficiente Delta (Δ) de solapamiento entre las distribuciones de actividad temporal (diel) de pares de especies — para el conjunto completo de mamíferos y, por separado, para pares de especies focales de interés de conservación.
+- **Enfoque:** el nicho temporal permite inferir interacciones ecológicas (competencia, co-ocurrencia, evitación depredador-presa) sin necesidad de observación directa (Kronfeld-Schor & Dayan, 2003).
+- **Implementación:** paquete `overlap` de R (Ridout & Linkie, 2009), metodología según Negret et al. (2023). Se usa el estimador Dhat1 (kernel von Mises) para muestras pequeñas (n < 50 detecciones) y Dhat4 (trigonométrico) para muestras grandes (n ≥ 50). Solo se incluyen especies con n ≥ 5 detecciones; los intervalos de confianza se calculan por bootstrap (999 réplicas).
+- **Cómo se calcula, paso a paso:**
+  1. Extracción de timestamps de detección por especie (tabla Media).
+  2. Ajuste de zona horaria (UTC-5, Colombia) y conversión a tiempo solar local.
+  3. Transformación a radianes.
+  4. Selección del estimador según n por especie (Dhat1 o Dhat4).
+  5. Cálculo del coeficiente Delta por par de especies.
+  6. Bootstrap para los intervalos de confianza.
+  7. Diferenciación de resultados: grupo completo de mamíferos vs. especies focales.
+
+---
+
 
 ## Estructura del repositorio
 
@@ -57,38 +96,6 @@ Para ejecutar correctamente este proyecto es necesario contar con **R (versión 
 ```r
 install.packages(c("tidyverse", "iNEXT", "overlap", "lubridate", "ggridges", "openxlsx", "reshape2"))
 ```
-
----
-
-## Fundamento metodológico
-
-Esta sección explica el *qué* y el *por qué* de los cálculos. El detalle de calidad e incertidumbre de cada indicador vive en las fichas del catálogo de indicadores; aquí solo va lo necesario para entender y reproducir el código.
-
-### Diversidad de especies (Números de Hill) y representatividad del muestreo
-
-- **Qué calcula:** los tres órdenes de diversidad de Hill — q=0 (riqueza de especies), q=1 (exponencial de Shannon, ponderado por abundancia) y q=2 (recíproco de Simpson, énfasis en especies dominantes) — junto con la representatividad acumulada del muestreo (razón entre riqueza observada y estimada) y la curva de acumulación de especies por monitor.
-- **Enfoque:** enfoque unificado de números de Hill de Chao et al. (2014), que permite comparar diversidad entre sitios y períodos corrigiendo el efecto del esfuerzo de muestreo.
-- **Implementación:** paquete `iNEXT` de R (Hsieh et al., 2016), con interpolación/extrapolación (100 knots) e intervalos de confianza por bootstrap (999 réplicas).
-- **Cómo se calcula, paso a paso:**
-  1. Curaduría: validación de nombres de especies y registros de detección.
-  2. Cálculo del esfuerzo: días-trampa activos por estación (tabla Deployment).
-  3. Construcción de la matriz de abundancias por especie.
-  4. Ejecución de `iNEXT`: curvas de rarefacción/extrapolación y números de Hill.
-  5. Extracción de resultados: (a) valores q0, q1, q2; (b) razón de completitud (riqueza observada/estimada); (c) curva acumulada por monitor.
-
-### Solapamiento de patrones de actividad (mamíferos y especies focales)
-
-- **Qué calcula:** el coeficiente Delta (Δ) de solapamiento entre las distribuciones de actividad temporal (diel) de pares de especies — para el conjunto completo de mamíferos y, por separado, para pares de especies focales de interés de conservación.
-- **Enfoque:** el nicho temporal permite inferir interacciones ecológicas (competencia, co-ocurrencia, evitación depredador-presa) sin necesidad de observación directa (Kronfeld-Schor & Dayan, 2003).
-- **Implementación:** paquete `overlap` de R (Ridout & Linkie, 2009), metodología según Negret et al. (2023). Se usa el estimador Dhat1 (kernel von Mises) para muestras pequeñas (n < 50 detecciones) y Dhat4 (trigonométrico) para muestras grandes (n ≥ 50). Solo se incluyen especies con n ≥ 5 detecciones; los intervalos de confianza se calculan por bootstrap (999 réplicas).
-- **Cómo se calcula, paso a paso:**
-  1. Extracción de timestamps de detección por especie (tabla Media).
-  2. Ajuste de zona horaria (UTC-5, Colombia) y conversión a tiempo solar local.
-  3. Transformación a radianes.
-  4. Selección del estimador según n por especie (Dhat1 o Dhat4).
-  5. Cálculo del coeficiente Delta por par de especies.
-  6. Bootstrap para los intervalos de confianza.
-  7. Diferenciación de resultados: grupo completo de mamíferos vs. especies focales.
 
 ---
 
